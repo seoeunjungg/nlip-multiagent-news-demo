@@ -57,11 +57,11 @@ class LlamaIndexSession(server.NLIP_Session):
         try:
             print("🔧 Initializing LlamaIndex components...")
 
-            api_key = os.getenv("OPENROUTER_API_KEY")
+            api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
-                raise ValueError("OPENROUTER_API_KEY environment variable is required. Get your key from https://openrouter.ai/")
+                raise ValueError("OPENAI_API_KEY env var is required")
             
-            print(f"🔑 Using OpenRouter API key: {api_key[:10]}...")
+            print(f"🔑 Using OpenAI API key: {api_key[:10]}...")
             
             self.llm = OpenAI(
                 model="gpt-4o-mini",

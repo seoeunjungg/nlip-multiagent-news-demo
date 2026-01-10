@@ -13,12 +13,61 @@ load_dotenv()
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 NEWS_API_URL = "https://newsapi.org/v2/everything"
 
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+SERPER_URL = "https://google.serper.dev/search"
 
-async def get_tech_news_brief(topic: str, days: int = 1) -> str:
+async def google_search_news(query: str, num: int = 10) -> list[dict]:
+    """
+    Perform a Google-style web search using Serper.
+    Returns a list of {title, link, snippet}.
+    """
+    if not SERPER_API_KEY:
+        return []
+
+    headers = {
+        "X-API-KEY": SERPER_API_KEY,
+        "Content-Type": "application/json",
+    }
+    payload = {"q": query, "num": num}
+
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            SERPER_URL,
+            headers=headers,
+            json=payload,
+            timeout=20.0,
+        )
+        r.raise_for_status()
+        data = r.json()
+
+    return [
+        {
+            "title": item.get("title"),
+            "link": item.get("link"),
+            "snippet": item.get("snippet"),
+        }
+        for item in data.get("organic", [])
+    ]
+
+
+async def get_tech_news_brief(topic: str, days: int = 1, domains: str | None = None, use_google: bool = False,) -> str:
     """
     Fetch real news articles about a tech topic using NewsAPI.org.
     """
+    if use_google:
+        query = f"{topic} technology news last {days} days"
+        results = await google_search_news(query, num=10)
 
+        if not results:
+            return f"❌ No Google results for '{topic}' (or SERPER_API_KEY missing)."
+
+        return "\n---\n".join(
+            f"🔎 **{r['title']}**\n"
+            f"- Snippet: {r['snippet']}\n"
+            f"- URL: {r['link']}"
+            for r in results
+        )
+    
     if not NEWS_API_KEY:
         return "❌ NEWS_API_KEY is missing. Add it to your .env file."
 
@@ -34,9 +83,10 @@ async def get_tech_news_brief(topic: str, days: int = 1) -> str:
         "language": "en",
         "searchIn": "title,description",
         "apiKey": NEWS_API_KEY,
-        "domains": "arstechnica.com,techcrunch.com,theverge.com,wired.com,theregister.com,zdnet.com,venturebeat.com,engadget.com,bleepingcomputer.com,securityweek.com,krebsonsecurity.com",
         "pageSize": 20,  
     }
+    if domains:
+        params["domains"] = domains
 
     async with httpx.AsyncClient() as client:
         try:

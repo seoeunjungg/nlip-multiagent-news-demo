@@ -7,6 +7,8 @@ agent via NLIP protocol. It demonstrates how different AI frameworks can collabo
 
 import asyncio
 import os
+import re
+from typing import Literal
 from typing import Any
 from dotenv import load_dotenv
 
@@ -29,13 +31,46 @@ load_dotenv()
 
 # Configuration
 LLAMAINDEX_SERVER_URL = os.getenv("LLAMAINDEX_SERVER_URL", "http://localhost:8013")
+LLAMAINDEX_STOCK_URL = os.getenv("LLAMAINDEX_STOCK_URL", "http://localhost:8014")
 
+Intent = Literal["price", "news", "both"]
+
+def detect_intent(text: str) -> Intent:
+    t = text.strip().lower()
+
+    price_keywords = [
+        "price", "quote", "stock", "share", "trading", "market cap",
+        "p/e", "pe ratio", "valuation", "ticker", "pre-market", "premarket",
+        "after hours", "after-hours"
+    ]
+    news_keywords = [
+        "news", "headline", "update", "announced", "report", "breach",
+        "vulnerability", "incident", "release", "ces", "launch"
+    ]
+
+    wants_price = any(k in t for k in price_keywords)
+    wants_news = any(k in t for k in news_keywords)
+
+    if wants_price and wants_news:
+        return "both"
+    if wants_price:
+        return "price"
+    if wants_news:
+        return "news"
+
+    return "both"
 
 class StreamingCallbackHandler(BaseCallbackHandler):
     """Callback handler for streaming responses."""
     
     def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
         print(token, end="", flush=True)
+
+@tool
+async def get_stock_quote(query: str) -> str:
+    """Get stock quote/price by delegating to the stock worker via NLIP."""
+    client = NLIPClient(LLAMAINDEX_STOCK_URL)
+    return await client.send_message(query.strip())
 
 @tool
 async def get_tech_news(topic: str, days: int = 1) -> str:
@@ -103,6 +138,7 @@ class LangChainSession(server.NLIP_Session):
             # Define available tools (all delegating to LlamaIndex server)
             self.tools = [
                 get_tech_news,
+                get_stock_quote
             ]
             
             # Create prompt template for coordination
@@ -136,21 +172,35 @@ class LangChainSession(server.NLIP_Session):
         text = msg.extract_text()
         
         try:
-            print(f"\n📨 [LangChain] Processing client query: {text}")
-            print("=" * 80)
-            
-            # Use the agent executor to process the query
-            result = await self.agent_executor.ainvoke({"input": text})
-            response = result["output"]
-            
-            print("=" * 80)
-            print(f"📤 [LangChain] Sending final response to client\n")
-            logger.info(f"LangChain Response: {response}")
-            return NLIP_Factory.create_text(response)
-            
+            intent = detect_intent(text)
+
+            if intent == "news":
+                news = await get_tech_news.ainvoke({"topic": text, "days": 2})
+                combined = f"## 📰 News\n{news}"
+                return NLIP_Factory.create_text(combined)
+
+            if intent == "price":
+                quote = await get_stock_quote.ainvoke({"query": text})
+                combined = f"## 📈 Price\n{quote}"
+                return NLIP_Factory.create_text(combined)
+
+            news_task = get_tech_news.ainvoke({"topic": text, "days": 2})
+            quote_task = get_stock_quote.ainvoke({"query": text})
+
+            news, quote = await asyncio.gather(news_task, quote_task)
+
+            combined = (
+                f"## 📈 Current Price\n{quote}\n\n"
+                f"## 📰 Recent News\n{news}\n\n"
+                f"## 🧠 Takeaway\n"
+                f"If you want, tell me your time horizon (days/weeks/months) and risk level, "
+                f"and I can summarize what matters most from the news + price action."
+            )
+            return NLIP_Factory.create_text(combined)
+
         except Exception as e:
-            logger.error(f"Exception in LangChain execution: {e}")
-            return NLIP_Factory.create_text(f"❌ Error processing request: {str(e)}")
+            print(f"ERROR:    Exception in LangChain execution: {e}")
+            return NLIP_Factory.create_text(f"❌ Error: {str(e)}")
 
     async def stop(self):
         """Clean up resources."""
