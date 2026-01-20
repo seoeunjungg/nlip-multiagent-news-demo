@@ -79,7 +79,7 @@ poetry run uvicorn demo.inter_agent.llamaindex_news_worker:app \ --host 0.0.0.0 
 ```
 **Terminal 3 - Start LangChain Coordinator:**
 ```bash
-poetry run uvicorn demo.inter_agent.langchain_coordinator:app \ --host 0.0.0.0 --port 8012
+poetry run uvicorn demo.inter_agent.langchain_coordinator:app --host 0.0.0.0 --port 8012
 ```
 
 **Terminal 4 - NLIP client:**
