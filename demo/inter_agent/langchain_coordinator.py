@@ -33,33 +33,6 @@ load_dotenv()
 LLAMAINDEX_SERVER_URL = os.getenv("LLAMAINDEX_SERVER_URL", "http://localhost:8013")
 LLAMAINDEX_STOCK_URL = os.getenv("LLAMAINDEX_STOCK_URL", "http://localhost:8014")
 
-Intent = Literal["price", "news", "both"]
-
-def detect_intent(text: str) -> Intent:
-    t = text.strip().lower()
-
-    price_keywords = [
-        "price", "quote", "stock", "share", "trading", "market cap",
-        "p/e", "pe ratio", "valuation", "ticker", "pre-market", "premarket",
-        "after hours", "after-hours"
-    ]
-    news_keywords = [
-        "news", "headline", "update", "announced", "report", "breach",
-        "vulnerability", "incident", "release", "ces", "launch"
-    ]
-
-    wants_price = any(k in t for k in price_keywords)
-    wants_news = any(k in t for k in news_keywords)
-
-    if wants_price and wants_news:
-        return "both"
-    if wants_price:
-        return "price"
-    if wants_news:
-        return "news"
-
-    return "both"
-
 class StreamingCallbackHandler(BaseCallbackHandler):
     """Callback handler for streaming responses."""
     
@@ -112,26 +85,12 @@ class LangChainSession(server.NLIP_Session):
         """Initialize LangChain components for coordination."""
         try:
             print("🔧 Initializing LangChain components...")
-            
-            print("🔑 Using local Ollama model 'llama3.1' ...")
 
-            self.llm = ChatOpenAI(
-                api_key=os.getenv("OPENAI_API_KEY"),
-            )
-
-            # Check for API key
-            # api_key = os.getenv("OPENROUTER_API_KEY")
-            # if not api_key:
-            #     raise ValueError("OPENROUTER_API_KEY environment variable is required. Get your key from https://openrouter.ai/")
-            
-            # print(f"🔑 Using OpenRouter API key: {api_key[:10]}...")
-            
-            # Initialize model via OpenRouter API
             self.llm = ChatOpenAI(
                 model="gpt-4o-mini",         
                 openai_api_key=os.getenv("OPENAI_API_KEY"),
                 temperature=0.3,
-                max_tokens=512,
+                max_tokens=1200,
                 callbacks=[StreamingCallbackHandler()],
             )
 
@@ -144,12 +103,9 @@ class LangChainSession(server.NLIP_Session):
             # Create prompt template for coordination
             prompt = ChatPromptTemplate.from_messages([
                 ("system",
-                "You are a helpful tech news agent. You answer questions about recent AI, computer science, "
-                "and cybersecurity news. You delegate fetching of raw news articles to a specialized worker agent "
-                "via tools, then you synthesize concise, factual summaries. When users ask about a single topic, "
-                "produce a TL;DR and key events. When they ask for a comparison (e.g., OpenAI vs Anthropic), "
-                "call the tool separately for each entity and produce a point-by-point comparison. "
-                "Avoid speculation; clearly distinguish between known facts and uncertainty."),
+                "You are a helpful assistant that answers questions about technology companies. "
+                "Use tools to fetch up-to-date stock prices or recent news when needed."
+                "Answer directly when the question can be answered without external data."),
                 ("human", "{input}"),
                 MessagesPlaceholder(variable_name="agent_scratchpad"),
             ])
@@ -167,40 +123,22 @@ class LangChainSession(server.NLIP_Session):
             raise
 
     async def execute(self, msg: nlip.NLIP_Message) -> nlip.NLIP_Message:
-        """Execute user query using LangChain with delegation."""
+        """Execute user query using LangChain agent with dynamic tool use."""
         logger = self.get_logger()
         text = msg.extract_text()
-        
+        logger.info(f"\n📨 [LangChain] Processing client query: {text}\n" + "=" * 80 + "\n")
+
         try:
-            intent = detect_intent(text)
+            result = await self.agent_executor.ainvoke({"input": text})
 
-            if intent == "news":
-                news = await get_tech_news.ainvoke({"topic": text, "days": 2})
-                combined = f"## 📰 News\n{news}"
-                return NLIP_Factory.create_text(combined)
+            output = result.get("output") if isinstance(result, dict) else str(result)
 
-            if intent == "price":
-                quote = await get_stock_quote.ainvoke({"query": text})
-                combined = f"## 📈 Price\n{quote}"
-                return NLIP_Factory.create_text(combined)
-
-            news_task = get_tech_news.ainvoke({"topic": text, "days": 2})
-            quote_task = get_stock_quote.ainvoke({"query": text})
-
-            news, quote = await asyncio.gather(news_task, quote_task)
-
-            combined = (
-                f"## 📈 Current Price\n{quote}\n\n"
-                f"## 📰 Recent News\n{news}\n\n"
-                f"## 🧠 Takeaway\n"
-                f"If you want, tell me your time horizon (days/weeks/months) and risk level, "
-                f"and I can summarize what matters most from the news + price action."
-            )
-            return NLIP_Factory.create_text(combined)
+            return NLIP_Factory.create_text(output)
 
         except Exception as e:
-            print(f"ERROR:    Exception in LangChain execution: {e}")
+            logger.exception("Exception in LangChain execution")
             return NLIP_Factory.create_text(f"❌ Error: {str(e)}")
+
 
     async def stop(self):
         """Clean up resources."""
