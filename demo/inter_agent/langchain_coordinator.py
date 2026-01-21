@@ -30,8 +30,8 @@ from ..shared.nlip_client import NLIPClient
 load_dotenv()
 
 # Configuration
-LLAMAINDEX_SERVER_URL = os.getenv("LLAMAINDEX_SERVER_URL", "http://localhost:8013")
-LLAMAINDEX_STOCK_URL = os.getenv("LLAMAINDEX_STOCK_URL", "http://localhost:8014")
+LLAMAINDEX_SERVER_URL = os.getenv("LLAMAINDEX_SERVER_URL", "http://localhost:8014")
+LLAMAINDEX_STOCK_URL  = os.getenv("LLAMAINDEX_STOCK_URL",  "http://localhost:8013")
 
 class StreamingCallbackHandler(BaseCallbackHandler):
     """Callback handler for streaming responses."""
@@ -147,17 +147,4 @@ class LangChainSession(server.NLIP_Session):
         self.agent_executor = None
         self.tools = []
 
-# Create the FastAPI app
 app = server.setup_server(LangChainApplication())
-
-if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) > 1 and sys.argv[1] == "standalone":
-        # Run standalone demo
-        asyncio.run(standalone_demo())
-    else:
-        print("🌟 LangChain NLIP Server Ready!")
-        print("This server coordinates requests and delegates tool execution to LlamaIndex worker.")
-        print("🚀 Start with: poetry run uvicorn demo.inter_agent.langchain_coordinator:app --host 0.0.0.0 --port 8012 --reload")
-        print("Make sure the LlamaIndex worker is running on port 8013 first!")

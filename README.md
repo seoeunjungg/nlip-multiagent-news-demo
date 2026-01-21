@@ -70,16 +70,19 @@ Open four terminals in the project directory:
 
 **Terminal 1 - Start Stock Worker:**
 ```bash
-poetry run uvicorn demo.inter_agent.llamaindex_stock_worker:app \ --host 0.0.0.0 --port 8013
+poetry run uvicorn demo.inter_agent.llamaindex_stock_worker:app \
+  --host 0.0.0.0 --port 8013
 ```
 
 **Terminal 2 - Start News Worker:**
 ```bash
-poetry run uvicorn demo.inter_agent.llamaindex_news_worker:app \ --host 0.0.0.0 --port 8014
+poetry run uvicorn demo.inter_agent.llamaindex_news_worker:app \
+  --host 0.0.0.0 --port 8014
 ```
 **Terminal 3 - Start LangChain Coordinator:**
 ```bash
-poetry run uvicorn demo.inter_agent.langchain_coordinator:app --host 0.0.0.0 --port 8012
+poetry run uvicorn demo.inter_agent.langchain_coordinator:app \
+  --host 0.0.0.0 --port 8012
 ```
 
 **Terminal 4 - NLIP client:**
